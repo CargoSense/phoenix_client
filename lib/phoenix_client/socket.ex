@@ -89,6 +89,8 @@ defmodule PhoenixClient.Socket do
       Keyword.get(opts, :transport_opts, [])
       |> Keyword.put(:sender, self())
 
+    fallback_pid = opts[:fallback_pid]
+
     send(self(), :connect)
 
     {:ok,
@@ -107,6 +109,7 @@ defmodule PhoenixClient.Socket do
        transport: transport,
        transport_opts: transport_opts,
        transport_pid: nil,
+       fallback_pid: fallback_pid,
        queue: :queue.new(),
        ref: 0
      }}
@@ -255,13 +258,19 @@ defmodule PhoenixClient.Socket do
   defp transport_receive(message, %{
          channels: channels,
          serializer: serializer,
-         json_library: json_library
+         json_library: json_library,
+         fallback_pid: fallback_pid
        }) do
     decoded = Message.decode!(serializer, message, json_library)
 
     case Map.get(channels, decoded.topic) do
-      nil -> :noop
-      {channel_pid, _} -> send(channel_pid, decoded)
+      nil ->
+        if fallback_pid do
+          send(fallback_pid, decoded)
+        end
+
+      {channel_pid, _} ->
+        send(channel_pid, decoded)
     end
   end
 
